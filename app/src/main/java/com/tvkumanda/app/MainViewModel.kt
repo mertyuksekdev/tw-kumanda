@@ -23,6 +23,8 @@ enum class Screen { DEVICES, PAIRING, REMOTE }
 
 data class CustomApp(val name: String, val target: String)
 
+data class Channel(val number: Int, val name: String, val favorite: Boolean = false)
+
 class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val prefs = app.getSharedPreferences("tv_kumanda", 0)
 
@@ -35,6 +37,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var volume by mutableStateOf<Pair<Int, Int>?>(null); private set
     val devices = mutableStateListOf<TvDevice>()
     val customApps = mutableStateListOf<CustomApp>()
+    val channels = mutableStateListOf<Channel>()
+    var switchToLiveFirst by mutableStateOf(true); private set
     var currentApp by mutableStateOf<Pair<String, String?>?>(null); private set
     var imeReady by mutableStateOf(false); private set
 
@@ -64,6 +68,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val parts = line.split('\t')
             if (parts.size == 2) customApps.add(CustomApp(parts[0], parts[1]))
         }
+        prefs.getString("channels", null)?.lines()?.forEach { line ->
+            val p = line.split('\t')
+            val n = p.getOrNull(0)?.toIntOrNull()
+            if (n != null && p.size >= 2) channels.add(Channel(n, p[1], p.getOrNull(2) == "1"))
+        }
+        switchToLiveFirst = prefs.getBoolean("live_first", true)
         // TVs saved by older versions were already paired.
         prefs.getString("host", null)?.let { markPaired(it, prefs.getString("name", null)) }
         CertManager.init(app)
@@ -251,6 +261,59 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun saveApps() {
         prefs.edit().putString("apps", customApps.joinToString("\n") { "${it.name}\t${it.target}" }).apply()
+    }
+
+    // ---------- channel list ----------
+
+    private fun saveChannels() {
+        channels.sortBy { it.number }
+        prefs.edit().putString(
+            "channels", channels.joinToString("\n") { "${it.number}\t${it.name}\t${if (it.favorite) 1 else 0}" }
+        ).apply()
+    }
+
+    /** Adds or replaces (when [old] is given) a channel. Returns an error message or null. */
+    fun saveChannel(old: Channel?, number: Int, name: String): String? {
+        val n = name.trim().ifEmpty { "Kanal $number" }
+        if (number <= 0) return "Kanal numarası 1 veya daha büyük olmalı"
+        if (channels.any { it.number == number && it != old }) return "$number numarası zaten listede"
+        val fav = old?.favorite ?: false
+        if (old != null) channels.remove(old)
+        channels.add(Channel(number, n, fav))
+        saveChannels()
+        return null
+    }
+
+    fun deleteChannel(c: Channel) { channels.remove(c); saveChannels() }
+
+    fun toggleFavorite(c: Channel) {
+        val i = channels.indexOf(c)
+        if (i >= 0) { channels[i] = c.copy(favorite = !c.favorite); saveChannels() }
+    }
+
+    fun addChannelTemplate(names: List<String>) {
+        var next = (channels.maxOfOrNull { it.number } ?: 0) + 1
+        names.forEach { n ->
+            if (channels.none { it.name.equals(n, ignoreCase = true) }) channels.add(Channel(next++, n))
+        }
+        saveChannels()
+    }
+
+    fun setLiveFirst(on: Boolean) { switchToLiveFirst = on; prefs.edit().putBoolean("live_first", on).apply() }
+
+    /** Switches the TV to the channel by typing its number, like the number keys on the remote. */
+    fun tune(c: Channel) {
+        val r = remote ?: return
+        val live = switchToLiveFirst
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                if (live) { r.sendKey(com.tvkumanda.app.tv.Keys.LIVE_TV); delay(1500) }
+                c.number.toString().forEach { d ->
+                    r.sendKey(com.tvkumanda.app.tv.Keys.digit(d - '0')); delay(250)
+                }
+            }
+        }
+        status = null
     }
 
     /** A package name, an https link, or a scheme like spotify://. */

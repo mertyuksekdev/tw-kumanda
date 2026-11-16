@@ -34,6 +34,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.input.ImeAction
 import com.tvkumanda.app.CustomApp
+import com.tvkumanda.app.Channel
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
@@ -344,7 +345,7 @@ private fun RemoteScreen(vm: MainViewModel) {
     var showMenu by remember { mutableStateOf(false) }
     var showAddApp by remember { mutableStateOf(false) }
     var showKeyboard by remember { mutableStateOf(false) }
-    val pager = rememberPagerState { 3 }
+    val pager = rememberPagerState { 4 }
     val scope = rememberCoroutineScope()
 
     Column(Modifier.fillMaxSize()) {
@@ -364,6 +365,7 @@ private fun RemoteScreen(vm: MainViewModel) {
                 when (page) {
                     0 -> DPadPage(vm)
                     1 -> NumberPage(vm)
+                    2 -> ChannelsPage(vm)
                     else -> ExtrasPage(vm)
                 }
             }
@@ -372,7 +374,7 @@ private fun RemoteScreen(vm: MainViewModel) {
             Modifier.fillMaxWidth().padding(vertical = 8.dp),
             horizontalArrangement = Arrangement.Center
         ) {
-            listOf("Yön", "Sayılar", "TV tuşları").forEachIndexed { i, title ->
+            listOf("Yön", "Sayılar", "Kanallar", "Tuşlar").forEachIndexed { i, title ->
                 val active = pager.currentPage == i
                 Pressable(
                     Modifier.padding(horizontal = 4.dp).height(28.dp), outline = false,
@@ -380,7 +382,7 @@ private fun RemoteScreen(vm: MainViewModel) {
                     onClick = { scope.launch { pager.animateScrollToPage(i) } }
                 ) {
                     Text(
-                        title, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 12.dp),
+                        title, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 10.dp),
                         color = if (active) Color.White else TextDim, fontWeight = FontWeight.SemiBold
                     )
                 }
@@ -829,5 +831,164 @@ private fun KeyboardDialog(vm: MainViewModel, onDismiss: () -> Unit) {
         },
         confirmButton = { TextButton(onClick = { vm.key(Keys.ENTER); onDismiss() }) { Text("Ara / Tamam") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Kapat") } },
+    )
+}
+
+// ---------- channel list ----------
+
+private val TEMPLATE_CHANNELS = listOf(
+    "TRT 1", "ATV", "Kanal D", "Show TV", "Star TV", "NOW", "TV8", "Kanal 7", "Beyaz TV", "TV 100",
+    "TRT Haber", "NTV", "CNN Türk", "Habertürk", "Halk TV", "Sözcü TV", "TRT Spor", "TRT Çocuk",
+)
+
+@Composable
+private fun ChannelsPage(vm: MainViewModel) {
+    var editing by remember { mutableStateOf<Channel?>(null) }
+    var adding by remember { mutableStateOf(false) }
+    var favOnly by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
+    val list = vm.channels.filter { (!favOnly || it.favorite) && (query.isBlank() || it.name.contains(query, true) || it.number.toString().startsWith(query)) }
+
+    Column(Modifier.fillMaxSize()) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = query, onValueChange = { query = it }, singleLine = true,
+                placeholder = { Text("Kanal ara") }, shape = RoundedCornerShape(14.dp),
+                leadingIcon = { Icon(Icons.Rounded.Search, null) },
+                modifier = Modifier.weight(1f).height(54.dp)
+            )
+            Pressable(
+                Modifier.size(48.dp), color = if (favOnly) Color(0x33FFC107) else Key,
+                onClick = { favOnly = !favOnly }
+            ) {
+                Icon(
+                    if (favOnly) Icons.Rounded.Star else Icons.Rounded.StarBorder, "Favoriler",
+                    tint = if (favOnly) Color(0xFFFFC107) else Color.White
+                )
+            }
+            Pressable(Modifier.size(48.dp), brush = Accent, onClick = { adding = true }) {
+                Icon(Icons.Rounded.Add, "Kanal ekle", tint = Color.White)
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+
+        if (vm.channels.isEmpty()) {
+            Column(
+                Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically)
+            ) {
+                Icon(Icons.Rounded.LiveTv, null, tint = TextDim, modifier = Modifier.size(40.dp))
+                Text("Kanal listeniz boş", fontWeight = FontWeight.SemiBold)
+                Text(
+                    "Kanallarınızı ekleyin, adını verin ve favorilere alın. Dokununca TV o kanala geçer.",
+                    fontSize = 13.sp, color = TextDim, textAlign = TextAlign.Center
+                )
+                Pressable(
+                    Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(14.dp), brush = Accent,
+                    onClick = { vm.addChannelTemplate(TEMPLATE_CHANNELS) }
+                ) { Text("Ulusal kanallarla başla", fontWeight = FontWeight.SemiBold, color = Color.White) }
+                Text(
+                    "Numaralar sırayla verilir. TV'nizdeki numaralara göre basılı tutup düzenleyin.",
+                    fontSize = 11.sp, color = TextDim, textAlign = TextAlign.Center
+                )
+            }
+        } else {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Önce canlı yayına geç", fontSize = 12.sp, color = TextDim, modifier = Modifier.weight(1f))
+                Switch(checked = vm.switchToLiveFirst, onCheckedChange = vm::setLiveFirst)
+            }
+            Column(
+                Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                list.forEach { c -> ChannelRow(vm, c, onEdit = { editing = c }) }
+                if (list.isEmpty()) Text("Eşleşen kanal yok", fontSize = 13.sp, color = TextDim)
+                Text(
+                    "Dokun: kanala geç · Basılı tut: düzenle/sil · ★: favori",
+                    fontSize = 11.sp, color = TextDim, modifier = Modifier.padding(vertical = 6.dp)
+                )
+            }
+        }
+    }
+
+    if (adding) ChannelDialog(vm, null) { adding = false }
+    editing?.let { c -> ChannelDialog(vm, c) { editing = null } }
+}
+
+@Composable
+private fun ChannelRow(vm: MainViewModel, c: Channel, onEdit: () -> Unit) {
+    val haptic = LocalHapticFeedback.current
+    Row(
+        Modifier.fillMaxWidth().height(58.dp).clip(RoundedCornerShape(16.dp)).background(Key)
+            .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(16.dp))
+            .pointerInput(c) {
+                detectTapGestures(
+                    onTap = { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); vm.tune(c) },
+                    onLongPress = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); onEdit() }
+                )
+            }
+            .padding(horizontal = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier.width(48.dp).height(36.dp).clip(RoundedCornerShape(10.dp)).background(KeyLight),
+            contentAlignment = Alignment.Center
+        ) { Text(c.number.toString(), fontWeight = FontWeight.Bold, color = Color.White) }
+        Spacer(Modifier.width(12.dp))
+        Text(
+            c.name, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Color.White,
+            maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f)
+        )
+        IconButton(onClick = { vm.toggleFavorite(c) }) {
+            Icon(
+                if (c.favorite) Icons.Rounded.Star else Icons.Rounded.StarBorder, "Favori",
+                tint = if (c.favorite) Color(0xFFFFC107) else TextDim
+            )
+        }
+    }
+}
+
+@Composable
+private fun ChannelDialog(vm: MainViewModel, channel: Channel?, onDismiss: () -> Unit) {
+    var number by remember { mutableStateOf(channel?.number?.toString() ?: "") }
+    var name by remember { mutableStateOf(channel?.name ?: "") }
+    var error by remember { mutableStateOf<String?>(null) }
+    var confirmDelete by remember { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Key,
+        title = { Text(if (channel == null) "Kanal ekle" else "Kanalı düzenle") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = number, onValueChange = { number = it.filter(Char::isDigit).take(4); error = null },
+                    label = { Text("Kanal numarası") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = name, onValueChange = { name = it; error = null },
+                    label = { Text("Kanal adı") }, singleLine = true, modifier = Modifier.fillMaxWidth()
+                )
+                error?.let { Text(it, color = Color(0xFFFFC2C8), fontSize = 13.sp) }
+                if (channel != null) {
+                    TextButton(onClick = {
+                        if (confirmDelete) { vm.deleteChannel(channel); onDismiss() } else confirmDelete = true
+                    }) {
+                        Icon(Icons.Rounded.Delete, null, tint = PowerRed)
+                        Spacer(Modifier.width(6.dp))
+                        Text(if (confirmDelete) "Silmek için tekrar dokunun" else "Kanalı sil", color = PowerRed)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = number.isNotEmpty(), onClick = {
+                val e = vm.saveChannel(channel, number.toIntOrNull() ?: 0, name)
+                if (e == null) onDismiss() else error = e
+            }) { Text("Kaydet") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Vazgeç") } },
     )
 }
