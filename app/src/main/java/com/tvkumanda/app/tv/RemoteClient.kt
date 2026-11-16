@@ -59,6 +59,9 @@ class RemoteClient(private val host: String, private val listener: Listener) {
     }
 
     private var socket: SSLSocket? = null
+
+    /** Called when the TV opens a voice session (after KEYCODE_SEARCH). */
+    @Volatile var onVoiceSession: ((Int) -> Unit)? = null
     @Volatile private var closed = false
 
     /** Throws if the TV refuses us (usually means pairing is needed). */
@@ -85,6 +88,11 @@ class RemoteClient(private val host: String, private val listener: Listener) {
     fun sendKey(keyCode: Int, direction: Int = 3 /* SHORT */) =
         send { msg(10) { int(1, keyCode); int(2, direction) } }
 
+    fun voiceBegin(session: Int) = send { msg(30) { int(1, session.toLong()) } }
+    fun voicePayload(session: Int, samples: ByteArray) =
+        send { msg(31) { int(1, session.toLong()); bytes(2, samples) } }
+    fun voiceEnd(session: Int) = send { msg(32) { int(1, session.toLong()) } }
+
     fun launchApp(link: String) = send { msg(90) { string(1, link) } }
 
     fun close() {
@@ -109,10 +117,11 @@ class RemoteClient(private val host: String, private val listener: Listener) {
             }
             m.has(2) -> send { msg(2) { int(1, 622) } } // remote_set_active
             m.has(8) -> send { msg(9) { int(1, m.msg(8)?.long(1) ?: 0L) } } // ping -> pong
+            m.has(30) -> onVoiceSession?.invoke((m.msg(30)?.long(1) ?: 0L).toInt())
             m.has(40) -> listener.onPower(m.msg(40)?.long(1) == 1L)
             m.has(50) -> m.msg(50)?.let {
                 listener.onVolume(
-                    (it.long(9) ?: 0).toInt(), (it.long(8) ?: 100).toInt(), it.long(10) == 1L
+                    (it.long(7) ?: 0).toInt(), (it.long(6) ?: 100).toInt(), it.long(8) == 1L
                 )
             }
         }

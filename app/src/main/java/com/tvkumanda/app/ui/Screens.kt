@@ -2,7 +2,18 @@
 
 package com.tvkumanda.app.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -316,6 +327,12 @@ private fun RemoteScreen(vm: MainViewModel) {
     var tab by rememberSaveable { mutableStateOf(Tab.REMOTE) }
     Column(Modifier.fillMaxSize()) {
         Header(vm)
+        vm.status?.let {
+            Pressable(
+                Modifier.fillMaxWidth().padding(top = 10.dp), shape = RoundedCornerShape(14.dp),
+                color = Color(0x33FF4D5E), outline = false, onClick = vm::clearStatus
+            ) { Text(it, fontSize = 13.sp, color = Color(0xFFFFC2C8), modifier = Modifier.padding(12.dp)) }
+        }
         Spacer(Modifier.height(14.dp))
         TabBar(tab) { tab = it }
         Spacer(Modifier.height(18.dp))
@@ -433,7 +450,7 @@ private fun RemoteTab(vm: MainViewModel) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             IconKey(Icons.Rounded.Input, "Kaynak") { vm.key(Keys.INPUT) }
             Spacer(Modifier.height(14.dp))
-            IconKey(Icons.Rounded.Mic, "Asistan", color = KeyLight) { vm.key(Keys.ASSIST) }
+            MicKey(vm)
         }
         Rocker("CH", Icons.Rounded.Add, Icons.Rounded.Remove, { vm.key(Keys.CHANNEL_UP) }, { vm.key(Keys.CHANNEL_DOWN) })
     }
@@ -501,6 +518,38 @@ private fun RemoteTab(vm: MainViewModel) {
         "D I J I T S U", fontSize = 14.sp, letterSpacing = 4.sp, color = TextDim,
         fontWeight = FontWeight.Bold
     )
+}
+
+/** Google mic button: tap, speak, it stops by itself when you go quiet (or tap again). */
+@Composable
+private fun MicKey(vm: MainViewModel) {
+    val ctx = LocalContext.current
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        if (ok) vm.toggleVoice() else vm.micDenied()
+    }
+    val pulse = rememberInfiniteTransition(label = "mic")
+    val glow by pulse.animateFloat(
+        1f, 1.15f, infiniteRepeatable(tween(600), RepeatMode.Reverse), label = "glow"
+    )
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Pressable(
+            Modifier.size(64.dp).graphicsLayer {
+                val k = if (vm.listening) glow else 1f
+                scaleX = k; scaleY = k
+            },
+            brush = if (vm.listening) Accent else null, color = KeyLight,
+            onClick = {
+                val granted = ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) ==
+                    PackageManager.PERMISSION_GRANTED
+                if (granted || vm.listening) vm.toggleVoice() else launcher.launch(Manifest.permission.RECORD_AUDIO)
+            }
+        ) { Icon(Icons.Rounded.Mic, "Sesli komut", tint = Color.White, modifier = Modifier.size(30.dp)) }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            if (vm.listening) "Dinliyor…" else "Sesli komut", fontSize = 11.sp,
+            color = if (vm.listening) Color(0xFF8FA8FF) else TextDim
+        )
+    }
 }
 
 private const val NETFLIX = "https://www.netflix.com/title"

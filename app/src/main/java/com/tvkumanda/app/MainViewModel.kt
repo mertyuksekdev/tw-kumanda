@@ -13,6 +13,7 @@ import com.tvkumanda.app.tv.PairingException
 import com.tvkumanda.app.tv.RemoteClient
 import com.tvkumanda.app.tv.TvDevice
 import com.tvkumanda.app.tv.TvDiscovery
+import com.tvkumanda.app.tv.VoiceStreamer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -130,6 +131,28 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val r = remote ?: return
         viewModelScope.launch(Dispatchers.IO) { runCatching { r.sendKey(code) } }
     }
+
+    var listening by mutableStateOf(false); private set
+    private var voice: VoiceStreamer? = null
+
+    fun toggleVoice() {
+        if (listening) { voice?.stop(); return }
+        val r = remote ?: return
+        val v = VoiceStreamer(r)
+        voice = v
+        listening = true
+        status = null
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { v.run() } }
+            listening = false
+            voice = null
+            result.exceptionOrNull()?.let { status = "Sesli komut: ${it.message}" }
+        }
+    }
+
+    fun micDenied() { status = "Sesli komut için mikrofon izni gerekiyor." }
+
+    fun clearStatus() { status = null }
 
     fun app(link: String) {
         val r = remote ?: return
