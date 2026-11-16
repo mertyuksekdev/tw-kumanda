@@ -826,7 +826,7 @@ private fun MicKey(vm: MainViewModel) {
 private fun MenuDialog(vm: MainViewModel, onDismiss: () -> Unit, onAddApp: () -> Unit) {
     val ctx = LocalContext.current
     val notifPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
-        vm.setNotificationRemote(ok)
+        vm.changeNotificationRemote(ok)
     }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -858,7 +858,7 @@ private fun MenuDialog(vm: MainViewModel, onDismiss: () -> Unit, onAddApp: () ->
                         ctx, Manifest.permission.POST_NOTIFICATIONS
                     ) != PackageManager.PERMISSION_GRANTED
                     if (on && needs) notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-                    else vm.setNotificationRemote(on)
+                    else vm.changeNotificationRemote(on)
                 }
                 Text(
                     "Ana ekran widget'ı: ana ekranda boş bir yere basılı tutun › Widget'lar › Apollo Kumanda.",
@@ -866,8 +866,8 @@ private fun MenuDialog(vm: MainViewModel, onDismiss: () -> Unit, onAddApp: () ->
                 )
 
                 Text("GENEL", fontSize = 11.sp, letterSpacing = 1.sp, color = TextDim)
-                SettingSwitch("Titreşim", "Tuşa basınca hafif titreşim", vm.haptics, vm::setHaptics)
-                SettingSwitch("Ekranı açık tut", "Kumanda açıkken ekran kararmasın", vm.keepScreenOn, vm::setKeepScreen)
+                SettingSwitch("Titreşim", "Tuşa basınca hafif titreşim", vm.haptics, vm::changeHaptics)
+                SettingSwitch("Ekranı açık tut", "Kumanda açıkken ekran kararmasın", vm.keepScreenOn, vm::changeKeepScreen)
                 Text(
                     "İpucu: Telefonun ses tuşları da TV'nin sesini değiştirir. " +
                         "Kısayolu kaldırmak için kutucuğa basılı tutun.",

@@ -306,10 +306,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         prefs.edit().putString("tvs", savedTvs.joinToString("\n") { "${it.name}\t${it.host}" }).apply()
     }
 
-    fun setHaptics(on: Boolean) { haptics = on; prefs.edit().putBoolean("haptics", on).apply() }
-    fun setKeepScreen(on: Boolean) { keepScreenOn = on; prefs.edit().putBoolean("keep_screen", on).apply() }
+    fun changeHaptics(on: Boolean) { haptics = on; prefs.edit().putBoolean("haptics", on).apply() }
+    fun changeKeepScreen(on: Boolean) { keepScreenOn = on; prefs.edit().putBoolean("keep_screen", on).apply() }
 
-    fun setNotificationRemote(on: Boolean) {
+    fun changeNotificationRemote(on: Boolean) {
         notificationRemote = on
         prefs.edit().putBoolean("notif_remote", on).apply()
         val ctx = getApplication<Application>()
