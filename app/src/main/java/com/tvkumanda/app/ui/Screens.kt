@@ -60,7 +60,7 @@ private fun StatusLine(vm: MainViewModel) {
 }
 
 @Composable
-private fun DevicesScreen(vm: MainViewModel) {
+private fun ColumnScope.DevicesScreen(vm: MainViewModel) {
     var manualIp by remember { mutableStateOf("") }
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text("Google TV Kumanda", fontSize = 24.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
@@ -240,8 +240,8 @@ private fun DPad(vm: MainViewModel) {
     ) {
         PadArrow(Icons.Default.KeyboardArrowUp, Modifier.align(Alignment.TopCenter)) { vm.key(Keys.UP) }
         PadArrow(Icons.Default.KeyboardArrowDown, Modifier.align(Alignment.BottomCenter)) { vm.key(Keys.DOWN) }
-        PadArrow(Icons.AutoMirrored.Filled.KeyboardArrowLeft, Modifier.align(Alignment.CenterStart)) { vm.key(Keys.LEFT) }
-        PadArrow(Icons.AutoMirrored.Filled.KeyboardArrowRight, Modifier.align(Alignment.CenterEnd)) { vm.key(Keys.RIGHT) }
+        PadArrow(Icons.Default.KeyboardArrowLeft, Modifier.align(Alignment.CenterStart)) { vm.key(Keys.LEFT) }
+        PadArrow(Icons.Default.KeyboardArrowRight, Modifier.align(Alignment.CenterEnd)) { vm.key(Keys.RIGHT) }
         val haptic = LocalHapticFeedback.current
         Box(
             Modifier.size(100.dp).clip(CircleShape).background(Color(0xFF3C3C42))
