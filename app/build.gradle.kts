@@ -21,6 +21,9 @@ android {
             isMinifyEnabled = false
         }
     }
+    packaging {
+        resources.excludes += setOf("META-INF/versions/9/OSGI-INF/MANIFEST.MF")
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -44,4 +47,5 @@ dependencies {
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-core")
+    implementation("org.bouncycastle:bcpkix-jdk18on:1.78.1")
 }

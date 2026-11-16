@@ -41,6 +41,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     init {
+        CertManager.init(app)
         discovery.start()
         viewModelScope.launch(Dispatchers.IO) { runCatching { CertManager.ensureKey() } }
         prefs.getString("host", null)?.let { connect(it, prefs.getString("name", null), autoPair = false) }
@@ -66,7 +67,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 startPairing(target)
             } else {
                 busy = false
-                status = "Kayıtlı TV'ye ulaşılamadı. Listeden seçin veya IP girin."
+                status = "Kayıtlı TV'ye ulaşılamadı. Listeden seçin veya IP girin.\n(${result.exceptionOrNull().describe()})"
             }
         }
     }
@@ -83,7 +84,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 status = null
                 screen = Screen.PAIRING
             } else {
-                status = "TV'ye bağlanılamadı. TV açık mı ve aynı Wi-Fi ağında mı?"
+                status = "Eşleştirme başlatılamadı.\n(${result.exceptionOrNull().describe()})"
             }
         }
     }
@@ -100,7 +101,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             when {
                 error == null -> { pairing = null; connect(target, tvName, autoPair = false) }
                 error is PairingException && error.message?.startsWith("Kod") == true -> status = error.message
-                else -> { pairing = null; screen = Screen.DEVICES; status = "Eşleştirme başarısız: ${error.message}" }
+                else -> { pairing = null; screen = Screen.DEVICES; status = "Eşleştirme başarısız.\n(${error.describe()})" }
             }
         }
     }
@@ -146,7 +147,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             viewModelScope.launch {
                 remote = null
                 screen = Screen.DEVICES
-                status = "TV ile bağlantı koptu."
+                status = "TV ile bağlantı koptu.\n(${error.describe()})"
             }
         }
     }
@@ -156,4 +157,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         remote?.close()
         pairing?.close()
     }
+}
+
+private fun Throwable?.describe(): String {
+    if (this == null) return "bilinmeyen hata"
+    val root = generateSequence(this) { it.cause }.last()
+    return "${root.javaClass.simpleName}: ${root.message ?: "-"}"
 }
