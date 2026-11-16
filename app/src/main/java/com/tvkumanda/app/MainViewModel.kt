@@ -14,6 +14,7 @@ import com.tvkumanda.app.tv.RemoteClient
 import com.tvkumanda.app.tv.TvDevice
 import com.tvkumanda.app.tv.TvDiscovery
 import com.tvkumanda.app.tv.VoiceStreamer
+import com.tvkumanda.app.tv.Live
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -39,11 +40,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val customApps = mutableStateListOf<CustomApp>()
     val channels = mutableStateListOf<Channel>()
     var switchToLiveFirst by mutableStateOf(true); private set
+
+    // ---------- settings ----------
+    var haptics by mutableStateOf(true); private set
+    var keepScreenOn by mutableStateOf(false); private set
+    var notificationRemote by mutableStateOf(false); private set
+    var sleepAt by mutableStateOf<Long?>(null); private set
+    val savedTvs = mutableStateListOf<TvDevice>()
     var currentApp by mutableStateOf<Pair<String, String?>?>(null); private set
     var imeReady by mutableStateOf(false); private set
 
     private var pairing: PairingClient? = null
     private var remote: RemoteClient? = null
+        set(value) { field = value; Live.client = value }
 
     /** Set when connecting to an already-paired TV failed: UI offers "retry" or "pair again". */
     var failedHost by mutableStateOf<String?>(null); private set
@@ -74,8 +83,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             if (n != null && p.size >= 2) channels.add(Channel(n, p[1], p.getOrNull(2) == "1"))
         }
         switchToLiveFirst = prefs.getBoolean("live_first", true)
+        haptics = prefs.getBoolean("haptics", true)
+        keepScreenOn = prefs.getBoolean("keep_screen", false)
+        notificationRemote = prefs.getBoolean("notif_remote", false)
+        sleepAt = SleepTimer.endsAt(app)
+        prefs.getString("tvs", null)?.lines()?.forEach { line ->
+            val p = line.split('\t')
+            if (p.size == 2) savedTvs.add(TvDevice(p[0], p[1]))
+        }
         // TVs saved by older versions were already paired.
-        prefs.getString("host", null)?.let { markPaired(it, prefs.getString("name", null)) }
+        prefs.getString("host", null)?.let { h ->
+            val n = prefs.getString("name", null)
+            markPaired(h, n)
+            if (savedTvs.none { it.host == h }) rememberTv(n ?: h, h)
+        }
         CertManager.init(app)
         discovery.start()
         viewModelScope.launch(Dispatchers.IO) { runCatching { CertManager.ensureKey() } }
@@ -106,6 +127,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 host = target
                 markPaired(target, tvName)
                 prefs.edit().putString("host", target).putString("name", tvName).apply()
+                rememberTv(tvName ?: target, target)
                 return null
             }
             last = r.exceptionOrNull()
@@ -164,6 +186,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Called when the app comes back to the screen. */
     fun onForeground() {
+        sleepAt = SleepTimer.endsAt(getApplication())
+        if (notificationRemote) RemoteNotification.show(getApplication())
         if (remote != null || busy || reconnecting || screen == Screen.PAIRING) return
         val saved = prefs.getString("host", null) ?: return
         if (screen == Screen.REMOTE) reconnect() else connect(saved, prefs.getString("name", null), autoPair = false)
@@ -263,6 +287,46 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         prefs.edit().putString("apps", customApps.joinToString("\n") { "${it.name}\t${it.target}" }).apply()
     }
 
+    private fun rememberTv(name: String, target: String) {
+        savedTvs.removeAll { it.name == name || it.host == target }
+        savedTvs.add(0, TvDevice(name, target))
+        prefs.edit().putString("tvs", savedTvs.joinToString("\n") { "${it.name}\t${it.host}" }).apply()
+    }
+
+    /** Switch to another TV that was paired before (no code needed). */
+    fun switchTo(tv: TvDevice) {
+        if (tv.host == host && remote != null) return
+        remote?.close(); remote = null
+        powerOn = null; volume = null
+        connect(tv.host, tv.name, autoPair = true)
+    }
+
+    fun forgetTv(tv: TvDevice) {
+        savedTvs.remove(tv)
+        prefs.edit().putString("tvs", savedTvs.joinToString("\n") { "${it.name}\t${it.host}" }).apply()
+    }
+
+    fun setHaptics(on: Boolean) { haptics = on; prefs.edit().putBoolean("haptics", on).apply() }
+    fun setKeepScreen(on: Boolean) { keepScreenOn = on; prefs.edit().putBoolean("keep_screen", on).apply() }
+
+    fun setNotificationRemote(on: Boolean) {
+        notificationRemote = on
+        prefs.edit().putBoolean("notif_remote", on).apply()
+        val ctx = getApplication<Application>()
+        if (on) RemoteNotification.show(ctx) else RemoteNotification.hide(ctx)
+    }
+
+    fun startSleepTimer(minutes: Int) {
+        val ctx = getApplication<Application>()
+        SleepTimer.set(ctx, minutes)
+        sleepAt = SleepTimer.endsAt(ctx)
+    }
+
+    fun cancelSleepTimer() {
+        SleepTimer.cancel(getApplication())
+        sleepAt = null
+    }
+
     // ---------- channel list ----------
 
     private fun saveChannels() {
@@ -335,7 +399,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val isConnected get() = remote != null && screen == Screen.REMOTE
 
     private val remoteListener = object : RemoteClient.Listener {
-        override fun onPower(on: Boolean) { viewModelScope.launch { powerOn = on } }
+        override fun onPower(on: Boolean) { Live.powerOn = on; viewModelScope.launch { powerOn = on } }
         override fun onVolume(level: Int, max: Int, muted: Boolean) {
             viewModelScope.launch { volume = if (muted) 0 to max else level to max }
         }

@@ -3,6 +3,7 @@
 package com.tvkumanda.app.ui
 
 import android.Manifest
+import android.os.Build
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -34,6 +35,13 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.input.ImeAction
 import com.tvkumanda.app.CustomApp
+import com.tvkumanda.app.tv.TvDevice
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.ui.platform.LocalView
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import kotlin.math.abs
 import com.tvkumanda.app.Channel
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -77,8 +85,28 @@ private val PowerRed = Color(0xFFFF4D5E)
 private val Online = Color(0xFF3DDC97)
 private const val MODEL = "Dijitsu Apollo Premium 4K"
 
+/** Whether buttons vibrate (setting). */
+val LocalHaptics = staticCompositionLocalOf { true }
+
+@Composable
+private fun buzz(): (HapticFeedbackType) -> Unit {
+    val h = LocalHapticFeedback.current
+    val on = LocalHaptics.current
+    return { t -> if (on) h.performHapticFeedback(t) }
+}
+
 @Composable
 fun App(vm: MainViewModel) {
+    val view = LocalView.current
+    DisposableEffect(vm.keepScreenOn) {
+        view.keepScreenOn = vm.keepScreenOn
+        onDispose { view.keepScreenOn = false }
+    }
+    CompositionLocalProvider(LocalHaptics provides vm.haptics) { AppContent(vm) }
+}
+
+@Composable
+private fun AppContent(vm: MainViewModel) {
     Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(BgTop, BgBottom)))) {
         Column(Modifier.fillMaxSize().systemBarsPadding().imePadding().padding(horizontal = 20.dp)) {
             AnimatedContent(vm.screen, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "screen") {
@@ -106,7 +134,7 @@ private fun Pressable(
     onClick: () -> Unit,
     content: @Composable BoxScope.() -> Unit,
 ) {
-    val haptic = LocalHapticFeedback.current
+    val vibrate = buzz()
     val scope = rememberCoroutineScope()
     val click by rememberUpdatedState(onClick)
     var pressed by remember { mutableStateOf(false) }
@@ -123,7 +151,7 @@ private fun Pressable(
             .pointerInput(repeat) {
                 detectTapGestures(onPress = {
                     pressed = true
-                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    vibrate(HapticFeedbackType.TextHandleMove)
                     click()
                     val job = if (repeat) scope.launch {
                         delay(450)
@@ -347,6 +375,7 @@ private fun RemoteScreen(vm: MainViewModel) {
     var showKeyboard by remember { mutableStateOf(false) }
     val pager = rememberPagerState { 4 }
     val scope = rememberCoroutineScope()
+    var touchpad by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize()) {
         Header(vm, onMenu = { showMenu = true })
@@ -360,10 +389,13 @@ private fun RemoteScreen(vm: MainViewModel) {
         AppStrip(vm, onAdd = { showAddApp = true })
         Spacer(Modifier.height(8.dp))
 
-        HorizontalPager(pager, Modifier.weight(1f).fillMaxWidth()) { page ->
+        HorizontalPager(
+            pager, Modifier.weight(1f).fillMaxWidth(),
+            userScrollEnabled = !(touchpad && pager.currentPage == 0)
+        ) { page ->
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 when (page) {
-                    0 -> DPadPage(vm)
+                    0 -> DPadPage(vm, touchpad) { touchpad = !touchpad }
                     1 -> NumberPage(vm)
                     2 -> ChannelsPage(vm)
                     else -> ExtrasPage(vm)
@@ -401,8 +433,13 @@ private fun RemoteScreen(vm: MainViewModel) {
 private fun Header(vm: MainViewModel, onMenu: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         IconKey(Icons.Rounded.Settings, size = 44.dp, onClick = onMenu)
+        var tvMenu by remember { mutableStateOf(false) }
         Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.clip(CircleShape).pointerInput(Unit) { detectTapGestures { tvMenu = true } }
+                    .padding(horizontal = 8.dp, vertical = 2.dp)
+            ) {
                 val on = vm.powerOn != false && !vm.reconnecting
                 Box(Modifier.size(9.dp).clip(CircleShape).background(if (on) Online else Color(0xFFFFB547)))
                 Spacer(Modifier.width(8.dp))
@@ -410,8 +447,28 @@ private fun Header(vm: MainViewModel, onMenu: () -> Unit) {
                     vm.tvName ?: "TV", fontSize = 20.sp, fontWeight = FontWeight.Bold,
                     maxLines = 1, overflow = TextOverflow.Ellipsis
                 )
+                Icon(Icons.Rounded.ArrowDropDown, "TV seç", tint = TextDim)
+                DropdownMenu(expanded = tvMenu, onDismissRequest = { tvMenu = false }) {
+                    vm.savedTvs.forEach { tv ->
+                        DropdownMenuItem(
+                            text = { Text(tv.name + if (tv.host == vm.host) "  ✓" else "") },
+                            leadingIcon = { Icon(Icons.Rounded.Tv, null) },
+                            onClick = { tvMenu = false; vm.switchTo(tv) }
+                        )
+                    }
+                    DropdownMenuItem(
+                        text = { Text("Yeni TV ekle") },
+                        leadingIcon = { Icon(Icons.Rounded.Add, null) },
+                        onClick = { tvMenu = false; vm.disconnect() }
+                    )
+                }
             }
-            Text(if (vm.reconnecting) "Yeniden bağlanıyor…" else MODEL, fontSize = 11.sp, color = TextDim)
+            vm.sleepAt?.let { at ->
+                Text(
+                    "☾ Uyku: ${SimpleDateFormat("HH:mm", Locale("tr")).format(Date(at))}'de kapanacak",
+                    fontSize = 11.sp, color = Color(0xFF8FA8FF)
+                )
+            } ?: Text(if (vm.reconnecting) "Yeniden bağlanıyor…" else MODEL, fontSize = 11.sp, color = TextDim)
         }
         Pressable(
             Modifier.size(48.dp), color = PowerRed.copy(alpha = 0.18f),
@@ -475,7 +532,7 @@ private fun AppTile(
     name: String, short: String, c1: Color, c2: Color,
     onClick: () -> Unit, onLongClick: (() -> Unit)? = null,
 ) {
-    val haptic = LocalHapticFeedback.current
+    val vibrate = buzz()
     Column(Modifier.width(72.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             Modifier.size(64.dp).clip(RoundedCornerShape(18.dp))
@@ -483,9 +540,9 @@ private fun AppTile(
                 .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(18.dp))
                 .pointerInput(onLongClick) {
                     detectTapGestures(
-                        onTap = { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); onClick() },
+                        onTap = { vibrate(HapticFeedbackType.TextHandleMove); onClick() },
                         onLongPress = onLongClick?.let { lc ->
-                            { _: Offset -> haptic.performHapticFeedback(HapticFeedbackType.LongPress); lc() }
+                            { _: Offset -> vibrate(HapticFeedbackType.LongPress); lc() }
                         }
                     )
                 },
@@ -504,10 +561,65 @@ private fun AppTile(
 // ---------- pages ----------
 
 @Composable
-private fun DPadPage(vm: MainViewModel) {
+private fun DPadPage(vm: MainViewModel, touchpad: Boolean, onToggle: () -> Unit) {
     BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         val size = minOf(maxWidth, maxHeight) * 0.94f
-        DPad(vm, size)
+        if (touchpad) Touchpad(vm) else DPad(vm, size)
+        Pressable(
+            Modifier.align(Alignment.TopEnd).height(34.dp), color = Key, onClick = onToggle
+        ) {
+            Row(Modifier.padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    if (touchpad) Icons.Rounded.Gamepad else Icons.Rounded.TouchApp, null,
+                    tint = Color.White, modifier = Modifier.size(16.dp)
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(if (touchpad) "Tuşlar" else "Dokunmatik", fontSize = 12.sp, color = Color.White)
+            }
+        }
+    }
+}
+
+/** Swipe to move, tap for OK, long-press for Back — like the Google TV app's touchpad. */
+@Composable
+private fun Touchpad(vm: MainViewModel) {
+    val vibrate = buzz()
+    val shape = RoundedCornerShape(32.dp)
+    Box(
+        Modifier.fillMaxWidth(0.96f).fillMaxHeight(0.9f).clip(shape)
+            .background(Brush.radialGradient(listOf(KeyLight, Key)))
+            .border(2.dp, Accent, shape)
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onTap = { vibrate(HapticFeedbackType.LongPress); vm.key(Keys.OK) },
+                    onLongPress = { vibrate(HapticFeedbackType.LongPress); vm.key(Keys.BACK) }
+                )
+            }
+            .pointerInput(Unit) {
+                val step = 48.dp.toPx()
+                var acc = Offset.Zero
+                detectDragGestures(onDragStart = { acc = Offset.Zero }) { change, drag ->
+                    change.consume()
+                    acc += drag
+                    if (abs(acc.x) >= step && abs(acc.x) > abs(acc.y)) {
+                        vm.key(if (acc.x > 0) Keys.RIGHT else Keys.LEFT)
+                        vibrate(HapticFeedbackType.TextHandleMove)
+                        acc = Offset(acc.x - (if (acc.x > 0) step else -step), 0f)
+                    } else if (abs(acc.y) >= step && abs(acc.y) >= abs(acc.x)) {
+                        vm.key(if (acc.y > 0) Keys.DOWN else Keys.UP)
+                        vibrate(HapticFeedbackType.TextHandleMove)
+                        acc = Offset(0f, acc.y - (if (acc.y > 0) step else -step))
+                    }
+                }
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(Icons.Rounded.TouchApp, null, tint = TextDim, modifier = Modifier.size(36.dp))
+            Spacer(Modifier.height(8.dp))
+            Text("Kaydır: gezin", fontSize = 13.sp, color = TextDim)
+            Text("Dokun: OK · Basılı tut: Geri", fontSize = 13.sp, color = TextDim)
+        }
     }
 }
 
@@ -712,23 +824,70 @@ private fun MicKey(vm: MainViewModel) {
 
 @Composable
 private fun MenuDialog(vm: MainViewModel, onDismiss: () -> Unit, onAddApp: () -> Unit) {
+    val ctx = LocalContext.current
+    val notifPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        vm.setNotificationRemote(ok)
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = Key,
         title = { Text("Ayarlar") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 MenuRow(Icons.Rounded.AddCircle, "Uygulama kısayolu ekle", onAddApp)
                 MenuRow(Icons.Rounded.SwapHoriz, "Başka bir TV'ye bağlan") { onDismiss(); vm.disconnect() }
+
+                Text("UYKU ZAMANLAYICISI", fontSize = 11.sp, letterSpacing = 1.sp, color = TextDim)
+                if (vm.sleepAt != null) {
+                    MenuRow(Icons.Rounded.Bedtime, "Zamanlayıcıyı iptal et") { vm.cancelSleepTimer() }
+                } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(15, 30, 60, 90).forEach { m ->
+                            Pressable(
+                                Modifier.weight(1f).height(44.dp), shape = RoundedCornerShape(12.dp),
+                                color = KeyLight, onClick = { vm.startSleepTimer(m) }
+                            ) { Text("$m dk", color = Color.White, fontSize = 13.sp) }
+                        }
+                    }
+                    Text("Süre dolunca TV açıksa kapatılır.", fontSize = 11.sp, color = TextDim)
+                }
+
+                Text("HIZLI ERİŞİM", fontSize = 11.sp, letterSpacing = 1.sp, color = TextDim)
+                SettingSwitch("Bildirim kumandası", "Bildirim panelinden güç, ses, oynat", vm.notificationRemote) { on ->
+                    val needs = Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(
+                        ctx, Manifest.permission.POST_NOTIFICATIONS
+                    ) != PackageManager.PERMISSION_GRANTED
+                    if (on && needs) notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    else vm.setNotificationRemote(on)
+                }
+                Text(
+                    "Ana ekran widget'ı: ana ekranda boş bir yere basılı tutun › Widget'lar › Apollo Kumanda.",
+                    fontSize = 11.sp, color = TextDim
+                )
+
+                Text("GENEL", fontSize = 11.sp, letterSpacing = 1.sp, color = TextDim)
+                SettingSwitch("Titreşim", "Tuşa basınca hafif titreşim", vm.haptics, vm::setHaptics)
+                SettingSwitch("Ekranı açık tut", "Kumanda açıkken ekran kararmasın", vm.keepScreenOn, vm::setKeepScreen)
                 Text(
                     "İpucu: Telefonun ses tuşları da TV'nin sesini değiştirir. " +
-                        "Uygulama kısayolunu kaldırmak için kutucuğa basılı tutun.",
-                    fontSize = 12.sp, color = TextDim
+                        "Kısayolu kaldırmak için kutucuğa basılı tutun.",
+                    fontSize = 11.sp, color = TextDim
                 )
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Kapat") } },
     )
+}
+
+@Composable
+private fun SettingSwitch(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(title, color = Color.White)
+            Text(subtitle, fontSize = 11.sp, color = TextDim)
+        }
+        Switch(checked = checked, onCheckedChange = onChange)
+    }
 }
 
 @Composable
@@ -918,14 +1077,14 @@ private fun ChannelsPage(vm: MainViewModel) {
 
 @Composable
 private fun ChannelRow(vm: MainViewModel, c: Channel, onEdit: () -> Unit) {
-    val haptic = LocalHapticFeedback.current
+    val vibrate = buzz()
     Row(
         Modifier.fillMaxWidth().height(58.dp).clip(RoundedCornerShape(16.dp)).background(Key)
             .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(16.dp))
             .pointerInput(c) {
                 detectTapGestures(
-                    onTap = { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); vm.tune(c) },
-                    onLongPress = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); onEdit() }
+                    onTap = { vibrate(HapticFeedbackType.TextHandleMove); vm.tune(c) },
+                    onLongPress = { vibrate(HapticFeedbackType.LongPress); onEdit() }
                 )
             }
             .padding(horizontal = 10.dp),

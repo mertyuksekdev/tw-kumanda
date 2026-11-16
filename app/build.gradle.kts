@@ -12,8 +12,8 @@ android {
         applicationId = "com.tvkumanda.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 7
-        versionName = "5.2"
+        versionCode = 8
+        versionName = "6.0"
     }
 
     signingConfigs {
