@@ -39,6 +39,13 @@ object Keys {
     const val BLUE = 186
     const val AUDIO_TRACK = 222
     const val LAST_CHANNEL = 229
+    const val ALL_APPS = 284
+    const val PROFILE = 288
+    const val ASSIST = 219
+    const val EXIT = 111
+    const val RECORD = 130
+    const val STOP = 86
+    const val TELETEXT = 233
     fun digit(n: Int) = 7 + n // KEYCODE_0 = 7
 }
 

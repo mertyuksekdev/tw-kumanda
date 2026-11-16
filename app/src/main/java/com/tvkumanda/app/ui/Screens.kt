@@ -309,7 +309,7 @@ private fun PairingScreen(vm: MainViewModel) {
 
 // ---------- remote ----------
 
-private enum class Tab(val title: String) { REMOTE("Kumanda"), APPS("Uygulamalar"), TV("TV") }
+private enum class Tab(val title: String) { REMOTE("Kumanda"), APPS("Uygulamalar") }
 
 @Composable
 private fun RemoteScreen(vm: MainViewModel) {
@@ -328,7 +328,6 @@ private fun RemoteScreen(vm: MainViewModel) {
                     when (t) {
                         Tab.REMOTE -> RemoteTab(vm)
                         Tab.APPS -> AppsTab(vm)
-                        Tab.TV -> TvTab(vm)
                     }
                     Spacer(Modifier.height(20.dp))
                 }
@@ -387,40 +386,143 @@ private fun TabBar(selected: Tab, onSelect: (Tab) -> Unit) {
     }
 }
 
+/** Mirrors the Dijitsu Apollo Premium 4K remote, top to bottom. */
 @Composable
 private fun RemoteTab(vm: MainViewModel) {
+    // power · mute
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        IconKey(Icons.Rounded.Input, "Kaynak") { vm.key(Keys.INPUT) }
-        IconKey(Icons.Rounded.LiveTv, "Canlı TV") { vm.key(Keys.LIVE_TV) }
-        IconKey(Icons.Rounded.Search, "Ara") { vm.key(Keys.SEARCH) }
-        IconKey(Icons.Rounded.Settings, "Ayarlar") { vm.key(Keys.SETTINGS) }
+        IconKey(Icons.Rounded.PowerSettingsNew, "Güç", color = PowerRed.copy(alpha = 0.2f), tint = PowerRed) {
+            vm.key(Keys.POWER)
+        }
+        IconKey(Icons.Rounded.VolumeOff, "Sessiz") { vm.key(Keys.MUTE) }
     }
-    Spacer(Modifier.height(26.dp))
-    DPad(vm)
-    Spacer(Modifier.height(26.dp))
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-        IconKey(Icons.Rounded.ArrowBack, "Geri", size = 60.dp) { vm.key(Keys.BACK) }
-        IconKey(Icons.Rounded.Home, "Ana ekran", size = 60.dp) { vm.key(Keys.HOME) }
-        IconKey(Icons.Rounded.Menu, "Menü", size = 60.dp) { vm.key(Keys.MENU) }
+    Spacer(Modifier.height(18.dp))
+
+    // number pad: 1-9, apps, 0, INFO
+    val pad = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "APPS", "0", "INFO")
+    pad.chunked(3).forEach { row ->
+        Row(Modifier.fillMaxWidth().padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            row.forEach { k ->
+                Pressable(
+                    Modifier.weight(1f).height(50.dp), shape = CircleShape,
+                    onClick = {
+                        when (k) {
+                            "APPS" -> vm.key(Keys.ALL_APPS)
+                            "INFO" -> vm.key(Keys.INFO)
+                            else -> vm.key(Keys.digit(k.toInt()))
+                        }
+                    }
+                ) {
+                    when (k) {
+                        "APPS" -> Icon(Icons.Rounded.Apps, "Uygulamalar", tint = Color.White)
+                        "INFO" -> Text("INFO", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        else -> Text(k, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                    }
+                }
+            }
+        }
     }
-    Spacer(Modifier.height(24.dp))
+    Spacer(Modifier.height(14.dp))
+
+    // VOL · input + assistant · CH
     Row(
-        Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly,
+        Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Rocker("SES", Icons.Rounded.Add, Icons.Rounded.Remove, { vm.key(Keys.VOLUME_UP) }, { vm.key(Keys.VOLUME_DOWN) })
+        Rocker("VOL", Icons.Rounded.Add, Icons.Rounded.Remove, { vm.key(Keys.VOLUME_UP) }, { vm.key(Keys.VOLUME_DOWN) })
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            IconKey(Icons.Rounded.VolumeOff, "Sessiz", size = 60.dp) { vm.key(Keys.MUTE) }
-            Spacer(Modifier.height(16.dp))
-            IconKey(Icons.Rounded.History, "Son kanal", size = 60.dp) { vm.key(Keys.LAST_CHANNEL) }
+            IconKey(Icons.Rounded.Input, "Kaynak") { vm.key(Keys.INPUT) }
+            Spacer(Modifier.height(14.dp))
+            IconKey(Icons.Rounded.Mic, "Asistan", color = KeyLight) { vm.key(Keys.ASSIST) }
         }
-        Rocker(
-            "KANAL", Icons.Rounded.KeyboardArrowUp, Icons.Rounded.KeyboardArrowDown,
-            { vm.key(Keys.CHANNEL_UP) }, { vm.key(Keys.CHANNEL_DOWN) }
-        )
+        Rocker("CH", Icons.Rounded.Add, Icons.Rounded.Remove, { vm.key(Keys.CHANNEL_UP) }, { vm.key(Keys.CHANNEL_DOWN) })
     }
-    Spacer(Modifier.height(24.dp))
-    MediaBar(vm)
+    Spacer(Modifier.height(18.dp))
+
+    // profile · settings
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        IconKey(Icons.Rounded.Person, "Profil") { vm.key(Keys.PROFILE) }
+        IconKey(Icons.Rounded.Settings, "Ayarlar") { vm.key(Keys.SETTINGS) }
+    }
+    Spacer(Modifier.height(8.dp))
+    DPad(vm)
+    Spacer(Modifier.height(8.dp))
+
+    // back · TV, home below
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        IconKey(Icons.Rounded.ArrowBack, "Geri") { vm.key(Keys.BACK) }
+        IconKey(Icons.Rounded.LiveTv, "TV") { vm.key(Keys.LIVE_TV) }
+    }
+    IconKey(Icons.Rounded.Home, "Ana ekran", size = 64.dp, color = KeyLight) { vm.key(Keys.HOME) }
+    Spacer(Modifier.height(20.dp))
+
+    // app keys
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        BrandKey("NETFLIX", Color.White, Color(0xFFE50914), Modifier.weight(1f)) { vm.app(NETFLIX) }
+        BrandKey("YouTube", Color.White, Color(0xFF212121), Modifier.weight(1f)) { vm.app(YOUTUBE) }
+    }
+    Spacer(Modifier.height(10.dp))
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        BrandKey("prime video", Color(0xFF00A8E1), Color.White, Modifier.weight(1f)) { vm.app(PRIME) }
+        BrandKey("Tüm uygulamalar", KeyLight, Color.White, Modifier.weight(1f)) { vm.key(Keys.ALL_APPS) }
+    }
+    Spacer(Modifier.height(18.dp))
+
+    // colour keys
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        listOf(
+            Keys.RED to Color(0xFFE53935), Keys.GREEN to Color(0xFF43A047),
+            Keys.YELLOW to Color(0xFFFDD835), Keys.BLUE to Color(0xFF1E88E5)
+        ).forEach { (code, c) ->
+            Pressable(
+                Modifier.weight(1f).height(36.dp), shape = CircleShape,
+                color = c.copy(alpha = 0.9f), onClick = { vm.key(code) }
+            ) {}
+        }
+    }
+    Spacer(Modifier.height(14.dp))
+
+    // EXIT · record · play/pause · stop
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        SmallKey("EXIT", Modifier.weight(1f)) { vm.key(Keys.EXIT) }
+        SmallKey(null, Modifier.weight(1f), Icons.Rounded.FiberManualRecord, Color(0xFFE53935)) { vm.key(Keys.RECORD) }
+        SmallKey(null, Modifier.weight(1f), Icons.Rounded.PlayArrow) { vm.key(Keys.PLAY_PAUSE) }
+        SmallKey(null, Modifier.weight(1f), Icons.Rounded.Stop) { vm.key(Keys.STOP) }
+    }
+    Spacer(Modifier.height(10.dp))
+    // SUBT · AUDIO · TXT
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        SmallKey("SUBT", Modifier.weight(1f)) { vm.key(Keys.CAPTIONS) }
+        SmallKey("AUDIO", Modifier.weight(1f)) { vm.key(Keys.AUDIO_TRACK) }
+        SmallKey("TXT", Modifier.weight(1f)) { vm.key(Keys.TELETEXT) }
+    }
+    Spacer(Modifier.height(18.dp))
+    Text(
+        "D I J I T S U", fontSize = 14.sp, letterSpacing = 4.sp, color = TextDim,
+        fontWeight = FontWeight.Bold
+    )
+}
+
+private const val NETFLIX = "https://www.netflix.com/title"
+private const val YOUTUBE = "https://www.youtube.com"
+private const val PRIME = "https://app.primevideo.com"
+
+@Composable
+private fun BrandKey(text: String, bg: Color, fg: Color, modifier: Modifier, onClick: () -> Unit) {
+    Pressable(modifier.height(48.dp), shape = RoundedCornerShape(14.dp), color = bg, onClick = onClick) {
+        Text(text, color = fg, fontWeight = FontWeight.Black, fontSize = 16.sp)
+    }
+}
+
+@Composable
+private fun SmallKey(
+    text: String?, modifier: Modifier, icon: ImageVector? = null, tint: Color = Color.White,
+    onClick: () -> Unit,
+) {
+    Pressable(modifier.height(42.dp), shape = CircleShape, onClick = onClick) {
+        if (icon != null) Icon(icon, null, tint = tint, modifier = Modifier.size(20.dp))
+        else Text(text ?: "", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+    }
 }
 
 @Composable
@@ -495,13 +597,13 @@ private fun MediaKey(icon: ImageVector, main: Boolean = false, onClick: () -> Un
 
 // ---------- apps ----------
 
-private data class AppShortcut(val name: String, val pkg: String, val c1: Long, val c2: Long)
+private data class AppShortcut(val name: String, val pkg: String, val c1: Long, val c2: Long, val link: String? = null)
 
 private val APPS = listOf(
-    AppShortcut("YouTube", "com.google.android.youtube.tv", 0xFFFF2D2D, 0xFFB00000),
-    AppShortcut("Netflix", "com.netflix.ninja", 0xFFE50914, 0xFF5C0006),
-    AppShortcut("Prime Video", "com.amazon.amazonvideo.livingroom", 0xFF1A98FF, 0xFF0B4F8A),
-    AppShortcut("Disney+", "com.disney.disneyplus", 0xFF1F3C8F, 0xFF0B1A45),
+    AppShortcut("YouTube", "com.google.android.youtube.tv", 0xFFFF2D2D, 0xFFB00000, YOUTUBE),
+    AppShortcut("Netflix", "com.netflix.ninja", 0xFFE50914, 0xFF5C0006, NETFLIX),
+    AppShortcut("Prime Video", "com.amazon.amazonvideo.livingroom", 0xFF1A98FF, 0xFF0B4F8A, PRIME),
+    AppShortcut("Disney+", "com.disney.disneyplus", 0xFF1F3C8F, 0xFF0B1A45, "https://www.disneyplus.com"),
     AppShortcut("HBO Max", "com.wbd.stream", 0xFF5B2EFF, 0xFF1B0B66),
     AppShortcut("Spotify", "com.spotify.tv.android", 0xFF1ED760, 0xFF0B6B2E),
     AppShortcut("YouTube Music", "com.google.android.youtube.tvmusic", 0xFFFF4E45, 0xFF7A0A06),
@@ -520,7 +622,7 @@ private fun AppsTab(vm: MainViewModel) {
                 Pressable(
                     Modifier.weight(1f).height(96.dp), shape = RoundedCornerShape(22.dp),
                     brush = Brush.linearGradient(listOf(Color(app.c1), Color(app.c2))),
-                    onClick = { vm.app("market://launch?id=${app.pkg}") }
+                    onClick = { vm.app(app.link ?: "market://launch?id=${app.pkg}") }
                 ) {
                     Text(
                         app.name, fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Color.White,
@@ -533,48 +635,3 @@ private fun AppsTab(vm: MainViewModel) {
     }
 }
 
-// ---------- TV panel keys ----------
-
-@Composable
-private fun TvTab(vm: MainViewModel) {
-    SectionTitle("Kanal numarası")
-    val rows = listOf(listOf("1", "2", "3"), listOf("4", "5", "6"), listOf("7", "8", "9"), listOf("⌫", "0", "OK"))
-    rows.forEach { row ->
-        Row(Modifier.fillMaxWidth().padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            row.forEach { k ->
-                Pressable(
-                    Modifier.weight(1f).height(58.dp), shape = RoundedCornerShape(18.dp),
-                    brush = if (k == "OK") Accent else null,
-                    onClick = {
-                        when (k) {
-                            "⌫" -> vm.key(Keys.DEL)
-                            "OK" -> vm.key(Keys.OK)
-                            else -> vm.key(Keys.digit(k.toInt()))
-                        }
-                    }
-                ) { Text(k, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = Color.White) }
-            }
-        }
-    }
-    Spacer(Modifier.height(14.dp))
-    SectionTitle("Renkli tuşlar")
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        listOf(
-            Keys.RED to Color(0xFFE53935), Keys.GREEN to Color(0xFF43A047),
-            Keys.YELLOW to Color(0xFFFDD835), Keys.BLUE to Color(0xFF1E88E5)
-        ).forEach { (code, c) ->
-            Pressable(
-                Modifier.weight(1f).height(44.dp), shape = RoundedCornerShape(14.dp),
-                color = c.copy(alpha = 0.85f), onClick = { vm.key(code) }
-            ) {}
-        }
-    }
-    Spacer(Modifier.height(24.dp))
-    SectionTitle("TV işlevleri")
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        IconKey(Icons.Rounded.ViewList, "Rehber") { vm.key(Keys.GUIDE) }
-        IconKey(Icons.Rounded.Info, "Bilgi") { vm.key(Keys.INFO) }
-        IconKey(Icons.Rounded.Subtitles, "Altyazı") { vm.key(Keys.CAPTIONS) }
-        IconKey(Icons.Rounded.Audiotrack, "Ses dili") { vm.key(Keys.AUDIO_TRACK) }
-    }
-}
