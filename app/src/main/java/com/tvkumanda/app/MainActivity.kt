@@ -32,6 +32,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        vm.onForeground()
+    }
+
     /** The phone's own volume buttons control the TV while connected. */
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         if (vm.isConnected) {

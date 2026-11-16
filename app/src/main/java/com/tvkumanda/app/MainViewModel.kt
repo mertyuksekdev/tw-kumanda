@@ -15,6 +15,7 @@ import com.tvkumanda.app.tv.TvDevice
 import com.tvkumanda.app.tv.TvDiscovery
 import com.tvkumanda.app.tv.VoiceStreamer
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -40,9 +41,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private var pairing: PairingClient? = null
     private var remote: RemoteClient? = null
 
+    /** Set when connecting to an already-paired TV failed: UI offers "retry" or "pair again". */
+    var failedHost by mutableStateOf<String?>(null); private set
+    var reconnecting by mutableStateOf(false); private set
+
     private val discovery = TvDiscovery(app) { device ->
         viewModelScope.launch {
             if (devices.none { it.host == device.host }) devices.add(device)
+            // TV got a new IP from the router: follow it, pairing does not depend on the IP.
+            val savedName = prefs.getString("name", null)
+            val savedHost = prefs.getString("host", null)
+            if (device.name == savedName && savedHost != null && savedHost != device.host) {
+                prefs.edit().putString("host", device.host).apply()
+                if (failedHost == savedHost) failedHost = device.host
+                if (remote == null && !busy && screen == Screen.DEVICES) connect(device.host, device.name, autoPair = false)
+            }
         }
     }
 
@@ -51,35 +64,99 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val parts = line.split('\t')
             if (parts.size == 2) customApps.add(CustomApp(parts[0], parts[1]))
         }
+        // TVs saved by older versions were already paired.
+        prefs.getString("host", null)?.let { markPaired(it, prefs.getString("name", null)) }
         CertManager.init(app)
         discovery.start()
         viewModelScope.launch(Dispatchers.IO) { runCatching { CertManager.ensureKey() } }
         prefs.getString("host", null)?.let { connect(it, prefs.getString("name", null), autoPair = false) }
     }
 
+    private fun isPaired(target: String, name: String?): Boolean {
+        val set = prefs.getStringSet("paired", emptySet()) ?: emptySet()
+        return target in set || (name != null && "name:$name" in set)
+    }
+
+    private fun markPaired(target: String, name: String?) {
+        val set = (prefs.getStringSet("paired", emptySet()) ?: emptySet()).toMutableSet()
+        set.add(target)
+        if (name != null) set.add("name:$name")
+        prefs.edit().putStringSet("paired", set).apply()
+    }
+
+    /** Tries the command port a few times; null on success, else the last error. */
+    private suspend fun tryConnect(target: String, attempts: Int, quietDelayMs: Long = 0): Throwable? {
+        var last: Throwable? = null
+        for (i in 0 until attempts) {
+            if (i > 0 || quietDelayMs > 0) delay(if (i == 0) quietDelayMs else 1500L * i)
+            val client = RemoteClient(target, remoteListener)
+            val r = withContext(Dispatchers.IO) { runCatching { client.connect() } }
+            if (r.isSuccess) {
+                remote = client
+                host = target
+                markPaired(target, tvName)
+                prefs.edit().putString("host", target).putString("name", tvName).apply()
+                return null
+            }
+            last = r.exceptionOrNull()
+        }
+        return last ?: IllegalStateException("bilinmeyen hata")
+    }
+
     fun connect(target: String, name: String? = null, autoPair: Boolean = true) {
         if (busy) return
         busy = true
+        failedHost = null
         status = "Bağlanıyor…"
         host = target
-        tvName = name ?: target
+        tvName = name ?: tvName?.takeIf { prefs.getString("host", null) == target } ?: target
         viewModelScope.launch {
-            val client = RemoteClient(target, remoteListener)
-            val result = withContext(Dispatchers.IO) { runCatching { client.connect() } }
-            if (result.isSuccess) {
-                remote = client
-                prefs.edit().putString("host", target).putString("name", tvName).apply()
-                status = null
-                screen = Screen.REMOTE
-                busy = false
-            } else if (autoPair) {
-                busy = false
-                startPairing(target)
-            } else {
-                busy = false
-                status = "Kayıtlı TV'ye ulaşılamadı. Listeden seçin veya IP girin.\n(${result.exceptionOrNull().describe()})"
+            val paired = isPaired(target, tvName)
+            val error = tryConnect(target, attempts = if (paired) 3 else 1)
+            busy = false
+            when {
+                error == null -> { status = null; screen = Screen.REMOTE }
+                // Only a TV we have never controlled needs the code.
+                !paired && autoPair -> startPairing(target)
+                else -> {
+                    failedHost = target
+                    status = "TV'ye bağlanılamadı. TV açık ve aynı Wi-Fi'de mi?\n(${error.describe()})"
+                }
             }
         }
+    }
+
+    fun retry() { failedHost?.let { connect(it, autoPair = false) } }
+
+    fun pairAgain() {
+        val target = failedHost ?: host ?: return
+        failedHost = null
+        startPairing(target)
+    }
+
+    /** Silent reconnect after the link dropped (TV slept, Wi-Fi blip, app was in background). */
+    private fun reconnect() {
+        val target = host ?: prefs.getString("host", null) ?: return
+        if (reconnecting || busy) return
+        reconnecting = true
+        viewModelScope.launch {
+            val error = tryConnect(target, attempts = 4, quietDelayMs = 700)
+            reconnecting = false
+            if (error == null) {
+                status = null
+            } else {
+                screen = Screen.DEVICES
+                failedHost = target
+                status = "TV ile bağlantı koptu.\n(${error.describe()})"
+            }
+        }
+    }
+
+    /** Called when the app comes back to the screen. */
+    fun onForeground() {
+        if (remote != null || busy || reconnecting || screen == Screen.PAIRING) return
+        val saved = prefs.getString("host", null) ?: return
+        if (screen == Screen.REMOTE) reconnect() else connect(saved, prefs.getString("name", null), autoPair = false)
     }
 
     private fun startPairing(target: String) {
@@ -109,7 +186,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             busy = false
             val error = result.exceptionOrNull()
             when {
-                error == null -> { pairing = null; connect(target, tvName, autoPair = false) }
+                error == null -> { pairing = null; markPaired(target, tvName); connect(target, tvName, autoPair = false) }
                 error is PairingException && error.message?.startsWith("Kod") == true -> status = error.message
                 else -> { pairing = null; screen = Screen.DEVICES; status = "Eşleştirme başarısız.\n(${error.describe()})" }
             }
@@ -206,8 +283,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         override fun onDisconnected(error: Throwable?) {
             viewModelScope.launch {
                 remote = null
-                screen = Screen.DEVICES
-                status = "TV ile bağlantı koptu.\n(${error.describe()})"
+                reconnect()
             }
         }
     }

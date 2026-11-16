@@ -204,6 +204,17 @@ private fun DevicesScreen(vm: MainViewModel) {
         }
         Spacer(Modifier.height(28.dp))
         StatusLine(vm)
+        if (vm.failedHost != null && !vm.busy) {
+            Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Pressable(
+                    Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(14.dp),
+                    brush = Accent, onClick = vm::retry
+                ) { Text("Tekrar dene", fontWeight = FontWeight.SemiBold, color = Color.White) }
+                Pressable(
+                    Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(14.dp), onClick = vm::pairAgain
+                ) { Text("Yeniden eşleştir", fontWeight = FontWeight.SemiBold, color = Color.White) }
+            }
+        }
 
         SectionTitle("Ağdaki televizyonlar")
         if (vm.devices.isEmpty()) {
@@ -390,7 +401,7 @@ private fun Header(vm: MainViewModel, onMenu: () -> Unit) {
         IconKey(Icons.Rounded.Settings, size = 44.dp, onClick = onMenu)
         Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                val on = vm.powerOn != false
+                val on = vm.powerOn != false && !vm.reconnecting
                 Box(Modifier.size(9.dp).clip(CircleShape).background(if (on) Online else Color(0xFFFFB547)))
                 Spacer(Modifier.width(8.dp))
                 Text(
@@ -398,7 +409,7 @@ private fun Header(vm: MainViewModel, onMenu: () -> Unit) {
                     maxLines = 1, overflow = TextOverflow.Ellipsis
                 )
             }
-            Text(MODEL, fontSize = 11.sp, color = TextDim)
+            Text(if (vm.reconnecting) "Yeniden bağlanıyor…" else MODEL, fontSize = 11.sp, color = TextDim)
         }
         Pressable(
             Modifier.size(48.dp), color = PowerRed.copy(alpha = 0.18f),
