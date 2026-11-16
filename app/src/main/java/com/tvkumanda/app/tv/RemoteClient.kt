@@ -28,6 +28,17 @@ object Keys {
     const val INPUT = 178
     const val SEARCH = 84
     const val DEL = 67
+    const val MENU = 82
+    const val INFO = 165
+    const val GUIDE = 172
+    const val CAPTIONS = 175
+    const val LIVE_TV = 170
+    const val RED = 183
+    const val GREEN = 184
+    const val YELLOW = 185
+    const val BLUE = 186
+    const val AUDIO_TRACK = 222
+    const val LAST_CHANNEL = 229
     fun digit(n: Int) = 7 + n // KEYCODE_0 = 7
 }
 

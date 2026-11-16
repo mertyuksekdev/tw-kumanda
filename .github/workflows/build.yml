@@ -21,13 +21,13 @@ jobs:
         with:
           gradle-version: 8.11.1
       - name: Derle
-        run: gradle :app:assembleDebug --no-daemon
+        run: gradle :app:assembleRelease --no-daemon
       - name: APK'yi hazırla
-        run: cp app/build/outputs/apk/debug/app-debug.apk TvKumanda.apk
+        run: cp app/build/outputs/apk/release/app-release.apk TvKumanda.apk
       - name: Sürüm olarak yayınla
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
-          name: TV Kumanda (derleme ${{ github.run_number }})
+          name: Apollo Kumanda (derleme ${{ github.run_number }})
           body: Telefonda TvKumanda.apk dosyasını indirip kurun.
           files: TvKumanda.apk

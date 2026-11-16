@@ -12,13 +12,27 @@ android {
         applicationId = "com.tvkumanda.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "2.0"
     }
 
+    signingConfigs {
+        create("app") {
+            storeFile = file("release.jks")
+            storePassword = "tvkumanda"
+            keyAlias = "tvkumanda"
+            keyPassword = "tvkumanda"
+        }
+    }
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            signingConfig = signingConfigs.getByName("app")
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+        debug {
+            signingConfig = signingConfigs.getByName("app")
         }
     }
     packaging {
@@ -46,6 +60,6 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.material:material-icons-core")
+    implementation("androidx.compose.material:material-icons-extended")
     implementation("org.bouncycastle:bcpkix-jdk18on:1.78.1")
 }
