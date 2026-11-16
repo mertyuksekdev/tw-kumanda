@@ -20,6 +20,8 @@ import kotlinx.coroutines.withContext
 
 enum class Screen { DEVICES, PAIRING, REMOTE }
 
+data class CustomApp(val name: String, val target: String)
+
 class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val prefs = app.getSharedPreferences("tv_kumanda", 0)
 
@@ -31,6 +33,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var powerOn by mutableStateOf<Boolean?>(null); private set
     var volume by mutableStateOf<Pair<Int, Int>?>(null); private set
     val devices = mutableStateListOf<TvDevice>()
+    val customApps = mutableStateListOf<CustomApp>()
+    var currentApp by mutableStateOf<Pair<String, String?>?>(null); private set
+    var imeReady by mutableStateOf(false); private set
 
     private var pairing: PairingClient? = null
     private var remote: RemoteClient? = null
@@ -42,6 +47,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     init {
+        prefs.getString("apps", null)?.lines()?.forEach { line ->
+            val parts = line.split('\t')
+            if (parts.size == 2) customApps.add(CustomApp(parts[0], parts[1]))
+        }
         CertManager.init(app)
         discovery.start()
         viewModelScope.launch(Dispatchers.IO) { runCatching { CertManager.ensureKey() } }
@@ -154,6 +163,30 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clearStatus() { status = null }
 
+    fun addApp(name: String, target: String) {
+        val n = name.trim().ifEmpty { target.trim() }
+        val t = target.trim()
+        if (t.isEmpty() || customApps.any { it.target == t }) return
+        customApps.add(CustomApp(n, t)); saveApps()
+    }
+
+    fun removeApp(app: CustomApp) { customApps.remove(app); saveApps() }
+
+    private fun saveApps() {
+        prefs.edit().putString("apps", customApps.joinToString("\n") { "${it.name}\t${it.target}" }).apply()
+    }
+
+    /** A package name, an https link, or a scheme like spotify://. */
+    fun openApp(target: String) =
+        app(if (target.contains("://") || target.startsWith("intent:")) target else "market://launch?id=$target")
+
+    fun sendText(text: String) {
+        val r = remote ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { if (text.isEmpty()) r.sendKey(com.tvkumanda.app.tv.Keys.DEL) else r.sendText(text) }
+        }
+    }
+
     fun app(link: String) {
         val r = remote ?: return
         viewModelScope.launch(Dispatchers.IO) { runCatching { r.launchApp(link) } }
@@ -166,6 +199,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         override fun onVolume(level: Int, max: Int, muted: Boolean) {
             viewModelScope.launch { volume = if (muted) 0 to max else level to max }
         }
+        override fun onCurrentApp(pkg: String, label: String?) {
+            viewModelScope.launch { currentApp = pkg to label }
+        }
+        override fun onImeReady() { viewModelScope.launch { imeReady = true } }
         override fun onDisconnected(error: Throwable?) {
             viewModelScope.launch {
                 remote = null

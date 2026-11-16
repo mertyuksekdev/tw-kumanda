@@ -46,6 +46,7 @@ object Keys {
     const val RECORD = 130
     const val STOP = 86
     const val TELETEXT = 233
+    const val ENTER = 66
     fun digit(n: Int) = 7 + n // KEYCODE_0 = 7
 }
 
@@ -56,7 +57,12 @@ class RemoteClient(private val host: String, private val listener: Listener) {
         fun onPower(on: Boolean)
         fun onVolume(level: Int, max: Int, muted: Boolean)
         fun onDisconnected(error: Throwable?)
+        fun onCurrentApp(pkg: String, label: String?) {}
+        fun onImeReady() {}
     }
+
+    @Volatile private var imeCounter = 0L
+    @Volatile private var fieldCounter = 0L
 
     private var socket: SSLSocket? = null
 
@@ -93,6 +99,19 @@ class RemoteClient(private val host: String, private val listener: Listener) {
         send { msg(31) { int(1, session.toLong()); bytes(2, samples) } }
     fun voiceEnd(session: Int) = send { msg(32) { int(1, session.toLong()) } }
 
+    /** Replaces the focused TV text field's content with [text]. */
+    fun sendText(text: String) {
+        if (text.isEmpty()) return
+        val pos = (text.length - 1).toLong()
+        send {
+            msg(21) {
+                int(1, imeCounter)
+                int(2, fieldCounter)
+                msg(3) { int(1, 1); msg(2) { int(1, pos); int(2, pos); string(3, text) } }
+            }
+        }
+    }
+
     fun launchApp(link: String) = send { msg(90) { string(1, link) } }
 
     fun close() {
@@ -117,6 +136,14 @@ class RemoteClient(private val host: String, private val listener: Listener) {
             }
             m.has(2) -> send { msg(2) { int(1, 622) } } // remote_set_active
             m.has(8) -> send { msg(9) { int(1, m.msg(8)?.long(1) ?: 0L) } } // ping -> pong
+            m.has(20) -> m.msg(20)?.msg(1)?.let { info ->
+                info.string(12)?.takeIf { it.isNotBlank() }?.let { listener.onCurrentApp(it, info.string(10)) }
+            }
+            m.has(21) -> m.msg(21)?.let {
+                imeCounter = it.long(1) ?: 0L
+                fieldCounter = it.long(2) ?: 0L
+                listener.onImeReady()
+            }
             m.has(30) -> onVoiceSession?.invoke((m.msg(30)?.long(1) ?: 0L).toInt())
             m.has(40) -> listener.onPower(m.msg(40)?.long(1) == 1L)
             m.has(50) -> m.msg(50)?.let {
