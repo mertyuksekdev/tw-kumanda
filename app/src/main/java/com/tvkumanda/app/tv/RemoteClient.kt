@@ -116,7 +116,9 @@ class RemoteClient(private val host: String, private val listener: Listener) {
 
     fun close() {
         closed = true
-        runCatching { socket?.close() }
+        val s = socket ?: return
+        // Closing TLS sends data; Android forbids network on the main thread.
+        thread(isDaemon = true) { runCatching { s.close() } }
     }
 
     private fun handle(m: ProtoMsg) {

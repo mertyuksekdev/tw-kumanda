@@ -72,37 +72,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    init {
-        prefs.getString("apps", null)?.lines()?.forEach { line ->
-            val parts = line.split('\t')
-            if (parts.size == 2) customApps.add(CustomApp(parts[0], parts[1]))
-        }
-        prefs.getString("channels", null)?.lines()?.forEach { line ->
-            val p = line.split('\t')
-            val n = p.getOrNull(0)?.toIntOrNull()
-            if (n != null && p.size >= 2) channels.add(Channel(n, p[1], p.getOrNull(2) == "1"))
-        }
-        switchToLiveFirst = prefs.getBoolean("live_first", true)
-        haptics = prefs.getBoolean("haptics", true)
-        keepScreenOn = prefs.getBoolean("keep_screen", false)
-        notificationRemote = prefs.getBoolean("notif_remote", false)
-        sleepAt = SleepTimer.endsAt(app)
-        prefs.getString("tvs", null)?.lines()?.forEach { line ->
-            val p = line.split('\t')
-            if (p.size == 2) savedTvs.add(TvDevice(p[0], p[1]))
-        }
-        // TVs saved by older versions were already paired.
-        prefs.getString("host", null)?.let { h ->
-            val n = prefs.getString("name", null)
-            markPaired(h, n)
-            if (savedTvs.none { it.host == h }) rememberTv(n ?: h, h)
-        }
-        CertManager.init(app)
-        discovery.start()
-        viewModelScope.launch(Dispatchers.IO) { runCatching { CertManager.ensureKey() } }
-        prefs.getString("host", null)?.let { connect(it, prefs.getString("name", null), autoPair = false) }
-    }
-
     private fun isPaired(target: String, name: String?): Boolean {
         val set = prefs.getStringSet("paired", emptySet()) ?: emptySet()
         return target in set || (name != null && "name:$name" in set)
@@ -413,6 +382,38 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 reconnect()
             }
         }
+    }
+
+    // Must stay below all properties: it starts connecting, which uses remoteListener.
+    init {
+        prefs.getString("apps", null)?.lines()?.forEach { line ->
+            val parts = line.split('\t')
+            if (parts.size == 2) customApps.add(CustomApp(parts[0], parts[1]))
+        }
+        prefs.getString("channels", null)?.lines()?.forEach { line ->
+            val p = line.split('\t')
+            val n = p.getOrNull(0)?.toIntOrNull()
+            if (n != null && p.size >= 2) channels.add(Channel(n, p[1], p.getOrNull(2) == "1"))
+        }
+        switchToLiveFirst = prefs.getBoolean("live_first", true)
+        haptics = prefs.getBoolean("haptics", true)
+        keepScreenOn = prefs.getBoolean("keep_screen", false)
+        notificationRemote = prefs.getBoolean("notif_remote", false)
+        sleepAt = SleepTimer.endsAt(app)
+        prefs.getString("tvs", null)?.lines()?.forEach { line ->
+            val p = line.split('\t')
+            if (p.size == 2) savedTvs.add(TvDevice(p[0], p[1]))
+        }
+        // TVs saved by older versions were already paired.
+        prefs.getString("host", null)?.let { h ->
+            val n = prefs.getString("name", null)
+            markPaired(h, n)
+            if (savedTvs.none { it.host == h }) rememberTv(n ?: h, h)
+        }
+        CertManager.init(app)
+        discovery.start()
+        viewModelScope.launch(Dispatchers.IO) { runCatching { CertManager.ensureKey() } }
+        prefs.getString("host", null)?.let { connect(it, prefs.getString("name", null), autoPair = false) }
     }
 
     override fun onCleared() {

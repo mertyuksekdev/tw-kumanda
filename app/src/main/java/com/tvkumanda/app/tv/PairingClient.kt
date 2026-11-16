@@ -39,7 +39,11 @@ class PairingClient(private val host: String) {
         close()
     }
 
-    fun close() = runCatching { socket.close() }
+    fun close() {
+        if (!::socket.isInitialized) return
+        val s = socket
+        kotlin.concurrent.thread(isDaemon = true) { runCatching { s.close() } }
+    }
 
     private fun computeSecret(code: String): ByteArray {
         val client = CertManager.certificate.publicKey as RSAPublicKey

@@ -18,7 +18,9 @@ class MainActivity : ComponentActivity() {
     private val vm: MainViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        installCrashLog()
         super.onCreate(savedInstanceState)
+        showLastCrash()
         setContent {
             MaterialTheme(
                 colorScheme = darkColorScheme(
@@ -30,6 +32,36 @@ class MainActivity : ComponentActivity() {
                 Surface(Modifier.fillMaxSize()) { App(vm) }
             }
         }
+    }
+
+    /** Saves the error of a crash so the next start can show it (and it can be sent to us). */
+    private fun installCrashLog() {
+        val file = java.io.File(filesDir, "crash.txt")
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { t, e ->
+            runCatching {
+                file.writeText(
+                    "Sürüm ${BuildConfigInfo.version}\n" + android.util.Log.getStackTraceString(e).take(4000)
+                )
+            }
+            previous?.uncaughtException(t, e)
+        }
+    }
+
+    private fun showLastCrash() {
+        val file = java.io.File(filesDir, "crash.txt")
+        if (!file.exists()) return
+        val text = runCatching { file.readText() }.getOrDefault("")
+        file.delete()
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Uygulama son kez hata verip kapandı")
+            .setMessage("Bu ekranın fotoğrafını gönderirseniz sorunu düzeltebiliriz.\n\n" + text.take(1500))
+            .setPositiveButton("Kopyala") { _, _ ->
+                val cm = getSystemService(android.content.ClipboardManager::class.java)
+                cm.setPrimaryClip(android.content.ClipData.newPlainText("hata", text))
+            }
+            .setNegativeButton("Kapat", null)
+            .show()
     }
 
     override fun onStart() {
@@ -47,4 +79,12 @@ class MainActivity : ComponentActivity() {
         }
         return super.onKeyDown(keyCode, event)
     }
+}
+
+private object BuildConfigInfo {
+    val version: String get() = runCatching {
+        val ctx = Class.forName("android.app.ActivityThread").getMethod("currentApplication").invoke(null)
+            as android.content.Context
+        ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName
+    }.getOrNull() ?: "?"
 }
